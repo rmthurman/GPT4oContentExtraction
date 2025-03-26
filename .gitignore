@@ -1,0 +1,12 @@
+config.json
+.venv/
+
+#exclude sample app folder
+sample-app-aoai-chatGPT/.venv/
+sample-app-aoai-chatGPT/.env
+sample-app-aoai-chatGPT/frontend/node_modules/
+
+docker/files/
+!docker/files/schema_template.json
+!docker/files/settings_template.json
+

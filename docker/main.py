@@ -398,7 +398,7 @@ def download_and_convert_file(job_request: JobRequest, job_info: Dict, blob_cont
     if pathlib.Path(download_file_name).suffix.lower() in supported_conversion_types:  
         job_info = upload_current_status(blob_container_client, job_dir, job_info, "Converting file to PDF")  
         pdf_path = convert_to_pdf(file_to_process, pdf_dir)  
-    elif download_file_name.endswith('.pdf'):  
+    elif download_file_name.endswith('.pdf') or download_file_name.endswith('.PDF'):
         job_info = upload_current_status(blob_container_client, job_dir, job_info, "No conversion needed for PDF.")  
         shutil.copy(file_to_process, pdf_dir)  
         pdf_path = os.path.join(pdf_dir, os.path.basename(file_to_process))  
@@ -501,10 +501,13 @@ def vectorize_by_page(merged_markdown: str, markdown_dir: str, job_request: JobR
             url= f"https://{job_request.blob_storage_service_name}.blob.core.windows.net/{job_request.blob_storage_container}/processed/{job_id}/images/{pg_number}.png?{job_request.image_sas_token}"
             print('Creating JSON document for chunk_id: ', pg_number, 'pg_number:', pg_number, 'url:', url)
 
+            file_name = job_request.url_file_to_process
+            file_name = file_name[:file_name.find('?')]
+
             json_data = {  
                 "doc_id": f"{job_id}-{pg_number}",  
                 "chunk_id": int(pg_number),  
-                "file_name": os.path.basename(job_request.url_file_to_process),  
+                "file_name": file_name,  
                 "content": content,  
                 "url": url,
                 "vector": generate_embedding(content, job_request.openai_embedding_api_version, job_request.openai_embedding_api_base, job_request.openai_embedding_api_key, job_request.openai_embedding_model)  
@@ -535,13 +538,14 @@ def vectorize_by_markdown(merged_markdown: str, job_request: JobRequest, job_id:
         text = '||' + str(pg_number-1) + '||\n' + last_heading + '\n' + text
         #Randy: Adding the URL to the JSON
         url= f"https://{job_request.blob_storage_service_name}.blob.core.windows.net/{job_request.blob_storage_container}/processed/{job_id}/images/{pg_number}.png?{job_request.image_sas_token}"
-        print('RT -Creating JSON document for chunk_id: ', pg_number, 'pg_number:', pg_number, 'url:', url)
-
         
+        file_name = job_request.url_file_to_process            
+        file_name = file_name[:file_name.find('?')]
+
         json_data = {  
             "doc_id": f"{job_id}-{chunk_id}",  
             "chunk_id": chunk_id,  
-            "file_name": os.path.basename(job_request.url_file_to_process),  
+            "file_name": file_name,
             "content": text,  
             "title": last_heading,  
             "url": url,

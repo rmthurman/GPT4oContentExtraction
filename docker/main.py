@@ -644,8 +644,13 @@ def process_image(markdown_out_dir, openai_gpt_api_key, openai_gpt_api_version, 
         markdown_text = extract_markdown_from_image(gpt_client, openai_gpt_model, file, prompt)  
         markdown_file_out = os.path.join(markdown_out_dir, os.path.basename(file).replace('.png', '.txt'))  
         print(markdown_file_out), prompt  
-        with open(markdown_file_out, 'w') as md_out:  
-            md_out.write(markdown_text)  
+        
+        #Randy:  sometimes these fail... need to continue processing
+        try:
+            with open(markdown_file_out, 'w') as md_out:  
+                md_out.write(markdown_text)  
+        except Exception as e:
+            print('Error writing file:', e)
     else:  
         print('Skipping non PNG file:', file)  
     return file  

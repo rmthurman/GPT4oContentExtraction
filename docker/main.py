@@ -115,6 +115,26 @@ class UploadFiles(BaseModel):
     folder: str  
   
 # Utility functions  
+def has_embedding_settings(settings):
+    """Check if all required embedding settings are present and not empty"""
+    required_keys = [
+        'openai_embedding_api_base',
+        'openai_embedding_api_key', 
+        'openai_embedding_api_version',
+        'openai_embedding_model'
+    ]
+    return all(key in settings and settings[key] and str(settings[key]).strip() for key in required_keys)
+
+def has_ai_search_settings(settings):
+    """Check if all required AI Search settings are present and not empty"""
+    required_keys = [
+        'search_service_name',
+        'search_admin_key',
+        'search_index_name',
+        'search_api_version'
+    ]
+    return all(key in settings and settings[key] and str(settings[key]).strip() for key in required_keys)
+
 def encode_base64(input_string):  
     byte_string = input_string.encode('utf-8')  
     encoded_bytes = base64.b64encode(byte_string)  
@@ -353,6 +373,9 @@ def background_task(job_id: str, job_request: JobRequest):
   
             if should_index(job_request):  
                 index_documents(documents, job_request, job_info, blob_container_client, job_dir)  
+            else:
+                job_info = upload_current_status(blob_container_client, job_dir, job_info, "Skipping AI Search indexing - search variables not properly configured.")
+                print("Skipping AI Search indexing - one or more search variables are '[redacted]', empty, or None")  
   
         job_info = upload_current_status(blob_container_client, job_dir, job_info, "Uploading content to Blob Storage.")  
         upload_files_to_blob_storage(blob_container_client, job_request.blob_storage_container, job_dir)  
@@ -562,7 +585,20 @@ def vectorize_by_markdown(merged_markdown: str, job_request: JobRequest, job_id:
     return documents  
   
 def should_index(job_request: JobRequest) -> bool:  
-    return all([job_request.search_service_name, job_request.search_admin_key, job_request.search_index_name, job_request.search_api_version])  
+    """Check if all required AI Search variables are properly configured"""
+    search_vars = [
+        job_request.search_service_name, 
+        job_request.search_admin_key, 
+        job_request.search_index_name, 
+        job_request.search_api_version
+    ]
+    
+    # Check if any variable is None, empty string, or "[redacted]"
+    for var in search_vars:
+        if not var or var == "[redacted]" or var.strip() == "":
+            return False
+    
+    return True  
   
 def index_documents(documents: list, job_request: JobRequest, job_info: Dict, blob_container_client, job_dir: str):  
     job_info = upload_current_status(blob_container_client, job_dir, job_info, "Indexing document to Azure AI Search")  
@@ -821,6 +857,12 @@ async def chat(user_input: str = Form(...),
                blob_storage_service_api_key: str = Form(...),  
                blob_storage_container: str = Form(...)  
               ):  
+    # Validate that all required AI Search parameters are provided and not "[redacted]"
+    search_vars = [search_service_name, search_admin_key, search_index_name, search_api_version]
+    for var in search_vars:
+        if not var or var == "[redacted]" or var.strip() == "":
+            return {"response": "AI Search is not properly configured. Please ensure search_service_name, search_admin_key, search_index_name, and search_api_version are all provided and not '[redacted]'."}
+    
     headers = {  
         "Content-Type": "application/json",  
         "api-key": search_admin_key  
@@ -923,8 +965,13 @@ async def read_form(
 async def upload_settings_file(request: Request, file: UploadFile = File(...)):  
     content = await file.read()  
     settings = json.loads(content)  
-  
-    return templates.TemplateResponse("index.html", {  
+    
+    # Check if embedding and AI search settings are present
+    has_embeddings = has_embedding_settings(settings)
+    has_search = has_ai_search_settings(settings)
+    
+    # Build template response with conditional settings
+    template_data = {
         "request": request,  
         "job_id": None,  
         "status": None,  
@@ -936,18 +983,46 @@ async def upload_settings_file(request: Request, file: UploadFile = File(...)):
         "openai_gpt_api_key": settings.get("openai_gpt_api_key", ""),  
         "openai_gpt_api_version": settings.get("openai_gpt_api_version", ""),  
         "openai_gpt_model": settings.get("openai_gpt_model", ""),  
-        "openai_embedding_api_base": settings.get("openai_embedding_api_base", ""),  
-        "openai_embedding_api_key": settings.get("openai_embedding_api_key", ""),  
-        "openai_embedding_api_version": settings.get("openai_embedding_api_version", ""),  
-        "openai_embedding_model": settings.get("openai_embedding_model", ""),  
-        "search_service_name": settings.get("search_service_name", ""),  
-        "search_index_name": settings.get("search_index_name", ""),  
-        "search_admin_key": settings.get("search_admin_key", ""),  
-        "search_api_version": settings.get("search_api_version", "2024-05-01-preview"),  
         "prompt": settings.get("prompt", """Extract everything you see in this image to markdown. Convert all charts such as line, pie and bar charts to markdown tables and include a note that the numbers are approximate."""),  
         "job_service_url": settings.get("job_service_url", ""),  
-        "sas_urls": None  
-    })  
+        "sas_urls": None,
+        "has_embedding_settings": has_embeddings,
+        "has_ai_search_settings": has_search
+    }
+    
+    # Only include embedding settings if they are present
+    if has_embeddings:
+        template_data.update({
+            "openai_embedding_api_base": settings.get("openai_embedding_api_base", ""),  
+            "openai_embedding_api_key": settings.get("openai_embedding_api_key", ""),  
+            "openai_embedding_api_version": settings.get("openai_embedding_api_version", ""),  
+            "openai_embedding_model": settings.get("openai_embedding_model", "")
+        })
+    else:
+        template_data.update({
+            "openai_embedding_api_base": "",  
+            "openai_embedding_api_key": "",  
+            "openai_embedding_api_version": "",  
+            "openai_embedding_model": ""
+        })
+    
+    # Only include AI search settings if they are present
+    if has_search:
+        template_data.update({
+            "search_service_name": settings.get("search_service_name", ""),  
+            "search_index_name": settings.get("search_index_name", ""),  
+            "search_admin_key": settings.get("search_admin_key", ""),  
+            "search_api_version": settings.get("search_api_version", "2024-05-01-preview")
+        })
+    else:
+        template_data.update({
+            "search_service_name": "",  
+            "search_index_name": "",  
+            "search_admin_key": "",  
+            "search_api_version": "2024-05-01-preview"
+        })
+  
+    return templates.TemplateResponse("index.html", template_data)  
 
 @app.post("/create-index")  
 async def create_index(request: Request):  
@@ -957,6 +1032,12 @@ async def create_index(request: Request):
     search_admin_key = data.get("search_admin_key")  
     search_api_version = data.get("search_api_version")  
     index_schema = data.get("index_schema")  
+
+    # Validate that all required AI Search parameters are provided and not "[redacted]"
+    search_vars = [search_service_name, search_admin_key, search_index_name, search_api_version]
+    for var in search_vars:
+        if not var or var == "[redacted]" or var.strip() == "":
+            return {"status": "Error: AI Search variables not properly configured. Please ensure search_service_name, search_admin_key, search_index_name, and search_api_version are all provided and not '[redacted]'."}
 
     if index_schema == "template":
         index_schema = index_schema_template
@@ -1107,8 +1188,11 @@ async def test_search(request: Request):
     search_admin_key = data.get("search_admin_key")  
     search_api_version = data.get("search_api_version")  
   
-    if search_service_name == "" or search_index_name == "" or search_admin_key == "" or search_api_version == "":  
-        return {"status": "fail", "message": "Missing Search parameters"}  
+    # Check for missing, empty, or "[redacted]" values
+    search_vars = [search_service_name, search_index_name, search_admin_key, search_api_version]
+    for var in search_vars:
+        if not var or var == "[redacted]" or var.strip() == "":
+            return {"status": "fail", "message": "Missing or invalid Search parameters. Please ensure all search variables are provided and not '[redacted]'."}  
   
     headers = {  
         "Content-Type": "application/json",  

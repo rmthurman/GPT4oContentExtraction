@@ -228,7 +228,22 @@ def extract_numeric_value(filename):
 #######################################
 # Indexing Azure AI Search Utils
 #######################################
+def should_index_to_ai_search():
+    """Check if all required AI Search variables are properly configured"""
+    required_vars = [search_service_name, search_admin_key, index_name, search_api_version]
+    
+    # Check if any variable is None, empty string, or "[redacted]"
+    for var in required_vars:
+        if not var or var == "[redacted]" or var.strip() == "":
+            return False
+    
+    return True
+
 def create_index():
+    if not should_index_to_ai_search():
+        print("Skipping index creation - AI Search variables not properly configured (some values are '[redacted]', empty, or None)")
+        return False
+        
     dims = len(generate_embedding('That quick brown fox.'))
     print ('Dimensions in Embedding Model:', dims)
     
@@ -257,9 +272,11 @@ def create_index():
     if response.status_code == 201:  
         print(f"Index {index_name} created successfully.")  
         # print(json.dumps(response.json(), indent=2))  
+        return True
     else:  
         print(f"Error creating index {index_name} :")  
         print(response.json())  
+        return False  
 
 
 def extract_numeric_value(filename):  
@@ -331,6 +348,10 @@ def process_json(file, doc_id, markdown_out_dir, json_out_dir):
     return file
 
 def index_content(json_files):
+    if not should_index_to_ai_search():
+        print("Skipping content indexing - AI Search variables not properly configured (some values are '[redacted]', empty, or None)")
+        return False
+        
     # Index the content
     batch_size = 50
     index_doc_url = f"{search_service_url}/indexes/{index_name}/docs/index?api-version={search_api_version}" 
@@ -358,10 +379,11 @@ def index_content(json_files):
     if response.status_code == 200:  
         print(f"Documents Indexed successfully.")  
         # print(json.dumps(response.json(), indent=2))  
+        return True
     else:  
         print(f"Error indexing documents {file} :")  
         print(response.json())  
-    documents = {"value": []}
+        return False
 
 def get_doc_id(dir_path):
     entries = os.listdir(dir_path)  

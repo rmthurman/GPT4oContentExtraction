@@ -38,15 +38,19 @@
             <li class="nav-item">  
                 <a class="nav-link active" id="settings-tab" data-toggle="tab" href="#settings" role="tab" aria-controls="settings" aria-selected="true">Settings</a>  
             </li>  
+            {% if has_ai_search_settings %}
             <li class="nav-item">  
                 <a class="nav-link" id="search-setup-tab" data-toggle="tab" href="#search-setup" role="tab" aria-controls="search-setup" aria-selected="true">AI Search Setup</a>  
             </li>  
+            {% endif %}
             <li class="nav-item">  
                 <a class="nav-link" id="submit-job-tab" data-toggle="tab" href="#submit-job" role="tab" aria-controls="submit-job" aria-selected="false">Process Documents</a>  
             </li>  
+            {% if has_ai_search_settings %}
             <li class="nav-item">  
                 <a class="nav-link" id="chat-tab" data-toggle="tab" href="#chat" role="tab" aria-controls="chat" aria-selected="false">Chat on your Data</a>  
             </li>  
+            {% endif %}
         </ul>  
   
         <div class="tab-content mt-3" id="myTabContent">  
@@ -57,6 +61,7 @@
                         <label for="file">Settings JSON File:</label>  
                         <input type="file" id="file" name="file" class="form-control" onchange="uploadSettingsFile(event)" required>  
                     </div>  
+                    {% if has_ai_search_settings %}
                     <h3>Azure AI Search <button type="button" class="btn btn-secondary btn-sm" onclick="testSearchAPI()">Test</button></h3>  
                     <div class="form-group">  
                         <label for="search_service_name">Service Name:</label>  
@@ -74,6 +79,11 @@
                         <label for="search_api_version">API Version:</label>  
                         <input type="text" id="search_api_version" name="search_api_version" class="form-control" value="{{ search_api_version }}">  
                     </div>  
+                    {% else %}
+                    <div class="alert alert-info" role="alert">
+                        <strong>AI Search Settings:</strong> Not configured in uploaded settings file. AI Search functionality will be disabled.
+                    </div>
+                    {% endif %}  
                     <h3>Azure Blob <button type="button" class="btn btn-secondary btn-sm" onclick="testBlobAPI()">Test</button></h3>  
                     <div class="form-group">  
                         <label for="blob_storage_service_name">Azure Account Name:</label>  
@@ -108,6 +118,7 @@
                         <label for="openai_gpt_model">Model:</label>  
                         <input type="text" id="openai_gpt_model" name="openai_gpt_model" class="form-control" value="{{ openai_gpt_model }}" required>  
                     </div>  
+                    {% if has_embedding_settings %}
                     <h3>Azure OpenAI Embeddings <button type="button" class="btn btn-secondary btn-sm" onclick="copyGPTValues()">Copy from GPT</button> <button type="button" class="btn btn-secondary btn-sm" onclick="testEmbeddingsAPI()">Test</button></h3>  	
                     <div class="form-group">  
                         <label for="openai_embedding_api_base">Endpoint:</label>  
@@ -125,6 +136,11 @@
                         <label for="openai_embedding_model">Model:</label>  
                         <input type="text" id="openai_embedding_model" name="openai_embedding_model" class="form-control" value="{{ openai_embedding_model }}" required>  
                     </div>  
+                    {% else %}
+                    <div class="alert alert-info" role="alert">
+                        <strong>Embeddings Settings:</strong> Not configured in uploaded settings file. Embedding functionality will be disabled.
+                    </div>
+                    {% endif %}  
                     <h3>Optional Overrides</h3>  
                     <div class="form-group">  
                         <label for="prompt">Prompt:</label>  
@@ -137,6 +153,7 @@
 
                 </form>  
             </div>  
+            {% if has_ai_search_settings %}
             <div class="tab-pane fade" id="search-setup" role="tabpanel" aria-labelledby="search-setup-tab">  
                 <div>  
 					<form class="mt-4">  
@@ -159,6 +176,7 @@
 					</form>
                 </div>  
             </div>  
+            {% endif %}  
             <div class="tab-pane fade" id="submit-job" role="tabpanel" aria-labelledby="submit-job-tab">  
                 <div>  
                     <ul class="nav nav-tabs" id="myTab" role="tablist">  
@@ -216,6 +234,7 @@
                     <div id="process-results" class="mt-3"></div>  
                 </div>  
             </div>  			
+            {% if has_ai_search_settings %}
             <div class="tab-pane fade" id="chat" role="tabpanel" aria-labelledby="chat-tab">  
                 <form onsubmit="sendMessage(event)">  
                     <div class="form-group">  
@@ -230,6 +249,7 @@
 		</form>  
                 <div id="chat-box" class="mt-3"></div>  
             </div>  
+            {% endif %}  
         </div>  
     </div>  
   

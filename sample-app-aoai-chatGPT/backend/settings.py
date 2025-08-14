@@ -347,6 +347,17 @@ class _AzureSearchSettings(BaseSettings, DatasourcePayloadConstructor):
         parameters = self.model_dump(exclude_none=True, by_alias=True)
         parameters.update(self._settings.search.model_dump(exclude_none=True, by_alias=True))
         
+        # Modify fields mapping for image mode
+        if self._settings.base_settings.use_image_mode and self.url_column:
+            # In image mode, use the URL field instead of content fields for vision models
+            parameters["fields_mapping"] = {
+                "content_fields": [self.url_column] if self.url_column else self.content_columns,
+                "title_field": self.title_column,
+                "url_field": self.url_column,
+                "filepath_field": self.filename_column,
+                "vector_fields": self.vector_columns
+            }
+        
         return {
             "type": self._type,
             "parameters": parameters
@@ -419,6 +430,7 @@ class _AzureCosmosDbMongoVcoreSettings(
             self._settings.azure_openai.extract_embedding_dependency()
         parameters = self.model_dump(exclude_none=True, by_alias=True)
         parameters.update(self._settings.search.model_dump(exclude_none=True, by_alias=True))
+            
         return {
             "type": self._type,
             "parameters": parameters
@@ -759,6 +771,7 @@ class _BaseSettings(BaseSettings):
     auth_enabled: bool = True
     sanitize_answer: bool = False
     use_promptflow: bool = False
+    use_image_mode: bool = False
 
 
 class _AppSettings(BaseModel):

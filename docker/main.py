@@ -107,6 +107,122 @@ class JobStatus(BaseModel):
     blob_storage_service_name: str  
     blob_storage_service_api_key: str  
     blob_storage_container: str  
+
+
+def get_model_specific_prompt(model_name: str, custom_prompt: Optional[str] = None) -> str:
+    """
+    Get the appropriate prompt based on the model type and version.
+    Falls back to custom prompt, then model-specific prompt, then default.
+    """
+    if custom_prompt:
+        return custom_prompt
+    
+    try:
+        # Load model prompts configuration
+        model_prompts_path = os.path.join(os.path.dirname(__file__), 'files', 'model_prompts.json')
+        with open(model_prompts_path, 'r') as f:
+            model_prompts = json.load(f)
+        
+        # Normalize model name for lookup
+        model_key = model_name.lower().strip()
+        
+        # Try exact match first (most specific)
+        if model_key in model_prompts:
+            return model_prompts[model_key]["prompt"]
+        
+        # Version-specific matching for GPT-4o variants
+        if "gpt-4o" in model_key:
+            # Try specific version matches first
+            version_matches = [
+                "gpt-4o-2024-11-20",
+                "gpt-4o-2024-08-06", 
+                "gpt-4o-2024-05-13",
+                "gpt-4o-mini-2024-07-18",
+                "gpt-4o-mini"
+            ]
+            for version in version_matches:
+                if version in model_key and version in model_prompts:
+                    return model_prompts[version]["prompt"]
+            
+            # Fall back to generic gpt-4o
+            if "gpt-4o" in model_prompts:
+                return model_prompts["gpt-4o"]["prompt"]
+        
+        # Version-specific matching for GPT-4 variants
+        elif "gpt-4" in model_key:
+            # Try specific version matches first
+            version_matches = [
+                "gpt-4-1106-vision-preview",
+                "gpt-4-vision-preview",
+                "gpt-4-turbo-2024-04-09",
+                "gpt-4-0125-preview",
+                "gpt-4-turbo",
+                "gpt-4-0613",
+                "gpt-4-32k"
+            ]
+            for version in version_matches:
+                if version in model_key and version in model_prompts:
+                    return model_prompts[version]["prompt"]
+            
+            # Check for vision variants
+            if "vision" in model_key and "gpt-4-vision-preview" in model_prompts:
+                return model_prompts["gpt-4-vision-preview"]["prompt"]
+            elif "turbo" in model_key and "gpt-4-turbo" in model_prompts:
+                return model_prompts["gpt-4-turbo"]["prompt"]
+            elif "32k" in model_key and "gpt-4-32k" in model_prompts:
+                return model_prompts["gpt-4-32k"]["prompt"]
+            
+            # Fall back to generic gpt-4
+            if "gpt-4" in model_prompts:
+                return model_prompts["gpt-4"]["prompt"]
+        
+        # Version-specific matching for GPT-3.5 variants
+        elif "gpt-35-turbo" in model_key or "gpt-3.5-turbo" in model_key:
+            # Try specific version matches first
+            version_matches = [
+                "gpt-35-turbo-0125",
+                "gpt-35-turbo-1106", 
+                "gpt-35-turbo-16k",
+                "gpt-3.5-turbo-16k"
+            ]
+            for version in version_matches:
+                if version.replace("gpt-35-", "gpt-3.5-") in model_key and version in model_prompts:
+                    return model_prompts[version]["prompt"]
+                elif version in model_key and version in model_prompts:
+                    return model_prompts[version]["prompt"]
+            
+            # Check for 16k variants
+            if "16k" in model_key:
+                if "gpt-35-turbo-16k" in model_prompts:
+                    return model_prompts["gpt-35-turbo-16k"]["prompt"]
+                elif "gpt-3.5-turbo-16k" in model_prompts:
+                    return model_prompts["gpt-3.5-turbo-16k"]["prompt"]
+            
+            # Fall back to generic versions
+            if "gpt-35-turbo" in model_prompts:
+                return model_prompts["gpt-35-turbo"]["prompt"]
+            elif "gpt-3.5-turbo" in model_prompts:
+                return model_prompts["gpt-3.5-turbo"]["prompt"]
+        
+        # Claude model matching
+        elif "claude" in model_key:
+            claude_matches = [
+                "claude-3-opus",
+                "claude-3-sonnet", 
+                "claude-3-haiku"
+            ]
+            for version in claude_matches:
+                if version in model_key and version in model_prompts:
+                    return model_prompts[version]["prompt"]
+        
+        # Fall back to default
+        return model_prompts.get("default", {}).get("prompt", 
+            "Extract everything you see in this image to markdown. Convert all charts such as line, pie and bar charts to markdown tables and include a note that the numbers are approximate.")
+    
+    except Exception as e:
+        print(f"Error loading model prompts: {e}")
+        # Return hardcoded default if file loading fails
+        return "Extract everything you see in this image to markdown. Convert all charts such as line, pie and bar charts to markdown tables and include a note that the numbers are approximate."
   
 class UploadFiles(BaseModel):  
     blob_storage_service_name: str  
@@ -590,7 +706,7 @@ def should_index(job_request: JobRequest) -> bool:
         job_request.search_service_name, 
         job_request.search_admin_key, 
         job_request.search_index_name, 
-        job_request.search_api_version
+        job_requestf.search_api_version
     ]
     
     # Check if any variable is None, empty string, or "[redacted]"
@@ -630,11 +746,10 @@ def extract_markdown_from_image(gpt_client, openai_gpt_model, image_path, prompt
     try:  
         base64_image = encode_image(image_path)  
         print('Length of Base64 Image:', len(base64_image))  
-        user_prompt = """Extract everything you see in this image to markdown.  
-                         Convert all charts such as line, pie and bar charts to markdown tables and include a note that the numbers are approximate.  
-                      """  
-        if prompt is not None:  
-            user_prompt = prompt  
+        
+        # Get model-specific prompt or use provided prompt
+        user_prompt = get_model_specific_prompt(openai_gpt_model, prompt)
+        print(f'Using prompt for model {openai_gpt_model}: {user_prompt[:100]}...')  
   
         while True and counter < max_attempts:  
             response = gpt_client.chat.completions.create(  
@@ -935,8 +1050,14 @@ async def read_form(
     openai_gpt_api_base: str = "", openai_gpt_api_key: str = "", openai_gpt_api_version: str = "", openai_gpt_model: str = "",  
     openai_embedding_api_base: str = "", openai_embedding_api_key: str = "", openai_embedding_api_version: str = "", openai_embedding_model: str = "",  
     search_service_name: str = "", search_index_name: str = "", search_admin_key: str = "", search_api_version: str = "2024-05-01-preview",  
-    prompt: str = """Extract everything you see in this image to markdown. Convert all charts such as line, pie and bar charts to markdown tables and include a note that the numbers are approximate."""  
+    prompt: str = ""  
 ):  
+    # Use model-specific prompt if no custom prompt is provided
+    if not prompt and openai_gpt_model:
+        prompt = get_model_specific_prompt(openai_gpt_model)
+    elif not prompt:
+        prompt = get_model_specific_prompt("")
+        
     return templates.TemplateResponse("index.html", {  
         "request": request,  
         "job_id": job_id,  
@@ -964,6 +1085,28 @@ async def read_form(
 @app.post("/upload-settings-file", response_class=HTMLResponse)  
 async def upload_settings_file(request: Request, file: UploadFile = File(...)):  
     content = await file.read()  
+
+
+@app.get("/test-prompts")
+async def test_prompts():
+    """
+    Test endpoint to demonstrate model-specific prompts
+    """
+    test_models = ["gpt-4o-2024-05-13", "gpt-4o", "gpt-4-vision", "gpt-4-turbo", "gpt-4", "gpt-35-turbo", "unknown-model"]
+    results = {}
+    
+    for model in test_models:
+        prompt = get_model_specific_prompt(model)
+        results[model] = {
+            "prompt": prompt,
+            "length": len(prompt),
+            "first_100_chars": prompt[:100] + "..." if len(prompt) > 100 else prompt
+        }
+    
+    return {
+        "message": "Model-specific prompts test",
+        "results": results
+    }  
     settings = json.loads(content)  
     
     # Check if embedding and AI search settings are present
@@ -983,7 +1126,7 @@ async def upload_settings_file(request: Request, file: UploadFile = File(...)):
         "openai_gpt_api_key": settings.get("openai_gpt_api_key", ""),  
         "openai_gpt_api_version": settings.get("openai_gpt_api_version", ""),  
         "openai_gpt_model": settings.get("openai_gpt_model", ""),  
-        "prompt": settings.get("prompt", """Extract everything you see in this image to markdown. Convert all charts such as line, pie and bar charts to markdown tables and include a note that the numbers are approximate."""),  
+        "prompt": settings.get("prompt") or get_model_specific_prompt(settings.get("openai_gpt_model", "")),  
         "job_service_url": settings.get("job_service_url", ""),  
         "sas_urls": None,
         "has_embedding_settings": has_embeddings,
